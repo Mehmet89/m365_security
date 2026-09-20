@@ -1,0 +1,27 @@
+name: M365 Postfach-Sicherheitscheck
+
+on:
+  workflow_dispatch: # Erlaubt den manuellen Start im Browser
+
+jobs:
+  run-security-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: PowerShell ausführen
+        shell: pwsh
+        run: |
+          ./m365_security.ps1
+        env:
+          CLIENT_ID: ${{ secrets.M365_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.M365_CLIENT_SECRET }}
+          TENANT_ID: ${{ secrets.M365_TENANT_ID }}
+
+      - name: Bericht als Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: sicherheits-report
+          path: C/Temp/sicherheits-reports/
