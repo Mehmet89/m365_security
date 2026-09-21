@@ -15,9 +15,9 @@ jobs:
         shell: pwsh
         run: ./m365_security.ps1
         env:
-          TENANT_ID: ${{ secrets.TENANT_ID }}
-          CLIENT_ID: ${{ secrets.CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          TENANT_ID: ${{ secrets.M365_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.M365_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.M365_CLIENT_SECRET }}
           AZURE_CERT_BASE64: ${{ secrets.AZURE_CERT_BASE64 }}
           AZURE_CERT_PASSWORD: ${{ secrets.AZURE_CERT_PASSWORD }}
 
