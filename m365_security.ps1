@@ -115,11 +115,158 @@ foreach ($Mailbox in $Mailboxes) {
 }
 
 # ==========================================
-# 5. BERICHT ERSTELLEN & AUFRÄUMEN
+# 5. HTML-BERICHT ERSTELLEN & AUFRÄUMEN
 # ==========================================
-$ReportPath = "./security-report.json"
-$Report | ConvertTo-Json -Depth 5 | Out-File -FilePath $ReportPath -Encoding utf8
-Write-Host "Bericht erfolgreich unter $ReportPath gespeichert." -ForegroundColor Green
+$ReportPath = "./security-report.html"
+
+# HTML-Gerüst aufbauen
+$HtmlContent = @"
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>M365 Security Check Report</title>
+    <style>
+        :root {
+            --primary-color: #003366;
+            --accent-color: #0078d4;
+            --text-color: #333333;
+            --bg-light: #f8f9fa;
+            --border-color: #dddddd;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background-color: #f4f6f8;
+        }
+        .container {
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        header {
+            border-bottom: 3px solid var(--primary-color);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .logo-area {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: var(--primary-color);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+        h1 {
+            color: var(--primary-color);
+            font-size: 2rem;
+            margin: 0 0 10px 0;
+        }
+        .meta-info {
+            font-size: 0.95rem;
+            color: #666;
+        }
+        h2 {
+            color: var(--primary-color);
+            border-left: 4px solid var(--accent-color);
+            padding-left: 12px;
+            margin-top: 30px;
+            font-size: 1.3rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            margin-bottom: 25px;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.95rem;
+        }
+        th {
+            background-color: var(--bg-light);
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: #f9fbfd;
+        }
+        .no-findings {
+            padding: 20px;
+            background-color: #e6f4ea;
+            color: #137333;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: 20px;
+        }
+        .footer-note {
+            margin-top: 40px;
+            font-size: 0.85rem;
+            color: #777;
+            text-align: center;
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-area">bits+bytes &bull; Security Operations</div>
+            <h1>M365 Security Check Report</h1>
+            <div class="meta-info">Erstellungsdatum: $(Get-Date -Format "dd.MM.yyyy HH:mm:ss") Uhr</div>
+        </header>
+        
+        <h2>Gefundene Weiterleitungen & Regeln</h2>
+"@
+
+if ($Report.Count -eq 0) {
+    $HtmlContent += @"
+        <div class="no-findings">
+            &check; Keine verdächtigen Weiterleitungen oder Postfachregeln in den geprüften Postfächern gefunden.
+        </div>
+"@
+} else {
+    $HtmlContent += @"
+        <table>
+            <thead>
+                <tr>
+                    <th>Postfach (UPN)</th>
+                    <th>Regel-Name</th>
+                    <th>Risikotyp</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+"@
+    foreach ($Item in $Report) {
+        $HtmlContent += "<tr><td>$($Item.UserPrincipalName)</td><td>$($Item.RuleName)</td><td>$($Item.RiskType)</td><td>$($Item.Details)</td></tr>"
+    }
+
+    $HtmlContent += @"
+            </tbody>
+        </table>
+"@
+}
+
+$HtmlContent += @"
+        <div class="footer-note">
+            &copy; $(Get-Date -Year) bits+bytes Computer GmbH & Co. KG &bull; Automatisiert generierter Bericht via GitHub Actions
+        </div>
+    </div>
+</body>
+</html>
+"@
+
+$HtmlContent | Out-File -FilePath $ReportPath -Encoding utf8
+Write-Host "HTML-Bericht erfolgreich unter $ReportPath gespeichert." -ForegroundColor Green
 
 Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
 Disconnect-MgGraph -ErrorAction SilentlyContinue
