@@ -256,9 +256,10 @@ if ($Report.Count -eq 0) {
 "@
 }
 
+# Korrektur hier: $((Get-Date).Year) statt $(Get-Date -Year)
 $HtmlContent += @"
         <div class="footer-note">
-            &copy; $(Get-Date -Year) bits+bytes Computer GmbH & Co. KG &bull; Automatisiert generierter Bericht via GitHub Actions
+            &copy; $((Get-Date).Year) bits+bytes Computer GmbH & Co. KG &bull; Automatisiert generierter Bericht via GitHub Actions
         </div>
     </div>
 </body>
