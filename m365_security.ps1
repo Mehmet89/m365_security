@@ -1,94 +1,94 @@
-# ==========================================
-# M365 Postfach-Sicherheitscheck (Cloud / Linux optimiert)
-# ==========================================
+<#
+.SYNOPSIS
+    M365 Security Check - Skript zur Überprüfung von Postfächern auf Sicherheitsrisiken
+    (z. B. versteckte Posteingangsregeln, Weiterleitungen etc.)
+.DESCRIPTION
+    Verbindet sich per App-Only (Client Credentials) mit Microsoft Graph und Exchange Online,
+    führt die Sicherheitsprüfungen durch und generiert einen Bericht.
+#>
 
-# Umgebungsvariablen aus GitHub Secrets einlesen
-$TenantId     = $env:TENANT_ID
-$ClientId     = $env:CLIENT_ID
-$ClientSecret = $env:CLIENT_SECRET
+# Parameter oder Umgebungsvariablen (werden idealerweise aus GitHub Secrets übergeben)
+param(
+    [Parameter(Mandatory=$false)]
+    [string]$TenantId = $env:TENANT_ID,
 
-# Prüfen, ob die Variablen übergeben wurden
+    [Parameter(Mandatory=$false)]
+    [string]$ClientId = $env:CLIENT_ID,
+
+    [Parameter(Mandatory=$false)]
+    [string]$ClientSecret = $env:CLIENT_SECRET
+)
+
+# Überprüfung, ob die Anmeldedaten vorhanden sind
 if (-not $TenantId -or -not $ClientId -or -not $ClientSecret) {
-    Write-Error "Fehler: Mindestens eine Verbindungsvariable (TENANT_ID, CLIENT_ID, CLIENT_SECRET) fehlt!"
+    Write-Error "Fehler: TenantId, ClientId oder ClientSecret wurden nicht übergeben oder sind leer."
     exit 1
 }
 
-Write-Host "Verbinde mit Microsoft Graph und Exchange Online..."
+Write-Host "Starte M365 Sicherheitscheck..." -ForegroundColor Cyan
+Write-Host "Verbinde mit Microsoft Graph und Exchange Online..." -ForegroundColor Cyan
 
-# Module laden (falls nicht im Runner vorinstalliert)
-if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
-    Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
+# 1. Client Secret in einen SecureString konvertieren und das PSCredential-Objekt erstellen
+$SecureSecret = ConvertTo-SecureString $ClientSecret -AsPlainText -Force
+$ClientCredential = New-Object System.Management.Automation.PSCredential ($ClientId, $SecureSecret)
+
+# 2. Verbindung zu Microsoft Graph herstellen (App-Only / ClientSecretCredential)
+try {
+    Connect-MgGraph -ClientSecretCredential $ClientCredential -TenantId $TenantId -ErrorAction Stop
+    Write-Host "Erfolgreich mit Microsoft Graph verbunden." -ForegroundColor Green
 }
-if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
-    Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force -AllowClobber
-}
-
-# Verbindung via App-Registrierung (Client Credentials Flow für automatisierte Cloud-Ausführung)
-Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -ClientSecret (ConvertTo-SecureString $ClientSecret -AsPlainText -Force)
-Connect-ExchangeOnline -AppId $ClientId -Organization $TenantId -CertificateThumbprint $null # Alternativ via Secret wenn vom Skript so unterstützt
-
-# Ausgabeverzeichnis für die Berichte definieren
-$OutputDir = "./sicherheits-reports"
-if (-not (Test-Path $OutputDir)) {
-    New-Item -ItemType Directory -Path $OutputDir | Out-Null
+catch {
+    Write-Error "Fehler bei der Verbindung zu Microsoft Graph: $_"
+    exit 1
 }
 
-$ReportPathHtml = "$OutputDir/sicherheits-report.html"
-$ReportPathCsv  = "$OutputDir/sicherheits-report.csv"
+# 3. Verbindung zu Exchange Online herstellen (App-Only)
+try {
+    Connect-ExchangeOnline -AppId $ClientId -Organization $TenantId -Credential $ClientCredential -ErrorAction Stop
+    Write-Host "Erfolgreich mit Exchange Online verbunden." -ForegroundColor Green
+}
+catch {
+    Write-Error "Fehler bei der Verbindung zu Exchange Online: $_"
+    Disconnect-MgGraph -ErrorAction SilentlyContinue
+    exit 1
+}
 
-Write-Host "Starte Postfach-Analyse..."
+# ==========================================
+# 4. SICHERHEITSPRÜFUNGEN & LOGIK
+# ==========================================
+Write-Host "Führe Postfach-Analysen durch..." -ForegroundColor Yellow
 
-# Beispielhafter Array für die Ergebnisse (ersetze dies durch deine Logik)
-$results = @()
+$Report = [System.Collections.Generic.List[PSCustomObject]]::New()
 
-# Postfächer abrufen und prüfen (Beispiel-Logik an dein Skript anpassen)
-$mailboxes = Get-Mailbox -ResultSize Unlimited -RecipientTypeDetails UserMailbox
-foreach ($mbx in $mailboxes) {
-    $rules = Get-InboxRule -Mailbox $mbx.UserPrincipalName -ErrorAction SilentlyContinue | Where-Object { $_.Enabled -eq $true }
-    
-    $externalForward = $false
-    foreach ($rule in $rules) {
-        if ($rule.ForwardTo -or $rule.RedirectTo) {
-            $externalForward = $true
+# Beispiel: Alle Postfächer abrufen und prüfen (anpassbar an deine bisherige Logik)
+$Mailboxes = Get-Mailbox -RecipientTypeDetails UserMailbox -ResultSize Unlimited
+
+foreach ($Mailbox in $Mailboxes) {
+    Write-Host "Prüfe Postfach: $($Mailbox.UserPrincipalName)" -ForegroundColor DarkCyan
+
+    # Posteingangsregeln prüfen
+    $Rules = Get-InboxRule -Mailbox $Mailbox.UserPrincipalName -ErrorAction SilentlyContinue
+    foreach ($Rule in $Rules) {
+        if ($Rule.ForwardTo -or $Rule.ForwardAsAttachmentTo -or $Rule.RedirectTo) {
+            $Report.Add([PSCustomObject]@{
+                UserPrincipalName = $Mailbox.UserPrincipalName
+                RuleName          = $Rule.Name
+                RiskType          = "Externe Weiterleitung / Regel"
+                Details           = "Regel leitet Mails weiter an: $($Rule.ForwardTo -join ', ')"
+            })
         }
     }
-
-    $results += [PSCustomObject]@{
-        UserPrincipalName  = $mbx.UserPrincipalName
-        Displayname        = $mbx.DisplayName
-        ActiveRulesCount   = $rules.Count
-        ExternalForward    = $externalForward
-    }
 }
 
-# CSV Export
-$results | Export-Csv -Path $ReportPathCsv -NoTypeInformation -Encoding utf8
+# ==========================================
+# 5. BERICHT ERSTELLEN & AUFRÄUMEN
+# ==========================================
+$ReportPath = "./security-report.json"
+$Report | ConvertTo-Json -Depth 5 | Out-File -FilePath $ReportPath -Encoding utf8
+Write-Host "Bericht erfolgreich unter $ReportPath gespeichert." -ForegroundColor Green
 
-# HTML Export erzeugen
-$htmlContent = @"
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <title>M365 Sicherheitsreport</title>
-    <style>
-        body { font-family: sans-serif; background: #111827; color: #f3f4f6; padding: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: #1f2937; }
-        th, td { padding: 12px; border: 1px solid #374151; text-align: left; }
-        th { background: #374151; }
-    </style>
-</head>
-<body>
-    <h1>M365 Postfach-Sicherheitscheck Report</h1>
-    <p>Erstellt am: $(Get-Date)</p>
-    <table>
-        <tr><th>Benutzer</th><th>Aktive Regeln</th><th>Externe Weiterleitung</th></tr>
-        $($results | ForEach-Object { "<tr><td>$($_.UserPrincipalName)</td><td>$($_.ActiveRulesCount)</td><td>$($_.ExternalForward)</td></tr>" } -join "`n")
-    </table>
-</body>
-</html>
-"@
+# Verbindungen sauber trennen
+Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+Disconnect-MgGraph -ErrorAction SilentlyContinue
 
-$htmlContent | Out-File -FilePath $ReportPathHtml -Encoding utf8
-
-Write-Host "Analyse abgeschlossen. Berichte unter $OutputDir gespeichert."
+Write-Host "Sicherheitscheck abgeschlossen." -ForegroundColor Green
