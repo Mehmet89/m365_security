@@ -2,8 +2,7 @@
 .SYNOPSIS
     M365 Security Check - Skript zur Überprüfung von Postfächern auf Sicherheitsrisiken
 .DESCRIPTION
-    Verbindet sich per App-Only mit Microsoft Graph (per Client Secret) und Exchange Online (per Zertifikat),
-    führt die Sicherheitsprüfungen durch und generiert einen Bericht.
+    Verbindet sich per App-Only mit Microsoft Graph (per Client Secret) und Exchange Online (per Zertifikat).
 #>
 
 param(
@@ -34,15 +33,11 @@ Write-Host "Starte M365 Sicherheitscheck..." -ForegroundColor Cyan
 # ---------------------------------------------------------------------------
 # 1. Module prüfen und laden
 # ---------------------------------------------------------------------------
-Write-Host "Überprüfe benötigte PowerShell-Module..." -ForegroundColor Cyan
-
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
-    Write-Host "Installiere Microsoft.Graph Modul..." -ForegroundColor Yellow
     Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
 }
 
 if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
-    Write-Host "Installiere ExchangeOnlineManagement Modul..." -ForegroundColor Yellow
     Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force -AllowClobber
 }
 
@@ -72,7 +67,6 @@ Write-Host "Verbinde mit Exchange Online (per Zertifikat)..." -ForegroundColor C
 $tempCertPath = $null
 
 try {
-    # Zertifikat aus Base64-Umgebungsvariable wiederherstellen
     $certBytes = [System.Convert]::FromBase64String($CertBase64)
     $tempCertPath = [System.IO.Path]::GetTempFileName() + ".pfx"
     [System.IO.File]::WriteAllBytes($tempCertPath, $certBytes)
@@ -80,7 +74,6 @@ try {
     $securePassword = ConvertTo-SecureString $CertPassword -AsPlainText -Force
     $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tempCertPath, $securePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
 
-    # Verbindung herstellen
     Connect-ExchangeOnline -AppId $ClientId -Organization $TenantId -Certificate $certificate -ErrorAction Stop
     Write-Host "Erfolgreich mit Exchange Online verbunden." -ForegroundColor Green
 }
@@ -91,7 +84,6 @@ catch {
     exit 1
 }
 finally {
-    # Aufräumen der temporären Zertifikatsdatei
     if ($tempCertPath -and (Test-Path $tempCertPath)) { Remove-Item $tempCertPath -Force }
 }
 
@@ -101,7 +93,6 @@ finally {
 Write-Host "Führe Postfach-Analysen durch..." -ForegroundColor Yellow
 
 $Report = [System.Collections.Generic.List[PSCustomObject]]::New()
-
 $Mailboxes = Get-Mailbox -RecipientTypeDetails UserMailbox -ResultSize Unlimited
 
 foreach ($Mailbox in $Mailboxes) {
@@ -127,7 +118,6 @@ $ReportPath = "./security-report.json"
 $Report | ConvertTo-Json -Depth 5 | Out-File -FilePath $ReportPath -Encoding utf8
 Write-Host "Bericht erfolgreich unter $ReportPath gespeichert." -ForegroundColor Green
 
-# Verbindungen sauber trennen
 Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
 Disconnect-MgGraph -ErrorAction SilentlyContinue
 
