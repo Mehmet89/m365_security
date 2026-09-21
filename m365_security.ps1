@@ -10,21 +10,24 @@ param(
     [string]$TenantId = $env:TENANT_ID,
 
     [Parameter(Mandatory=$false)]
-    [string]$ClientId = $env:CLIENT_ID,
+    [string]$ClientId = $env:M365_CLIENT_ID,
 
     [Parameter(Mandatory=$false)]
-    [string]$ClientSecret = $env:CLIENT_SECRET,
+    [string]$ClientSecret = $env:M365_CLIENT_SECRET,
 
     [Parameter(Mandatory=$false)]
     [string]$CertBase64 = $env:AZURE_CERT_BASE64,
 
     [Parameter(Mandatory=$false)]
-    [string]$CertPassword = $env:AZURE_CERT_PASSWORD
+    [string]$CertPassword = $env:AZURE_CERT_PASSWORD,
+
+    [Parameter(Mandatory=$false)]
+    [string]$M365Domain = $env:M365_DOMAIN
 )
 
 # Überprüfung, ob alle notwendigen Variablen vorhanden sind
-if (-not $TenantId -or -not $ClientId -or -not $ClientSecret -or -not $CertBase64 -or -not $CertPassword) {
-    Write-Error "Fehler: Mindestens eine der erforderlichen Umgebungsvariablen (TenantId, ClientId, ClientSecret, AZURE_CERT_BASE64, AZURE_CERT_PASSWORD) fehlt."
+if (-not $TenantId -or -not $ClientId -or -not $ClientSecret -or -not $CertBase64 -or -not $CertPassword -or -not $M365Domain) {
+    Write-Error "Fehler: Mindestens eine der erforderlichen Umgebungsvariablen fehlt."
     exit 1
 }
 
@@ -61,7 +64,7 @@ catch {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Verbindung zu Exchange Online herstellen (mit Zertifikat)
+# 3. Verbindung zu Exchange Online herstellen (mit Zertifikat & Domain)
 # ---------------------------------------------------------------------------
 Write-Host "Verbinde mit Exchange Online (per Zertifikat)..." -ForegroundColor Cyan
 $tempCertPath = $null
@@ -74,7 +77,8 @@ try {
     $securePassword = ConvertTo-SecureString $CertPassword -AsPlainText -Force
     $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tempCertPath, $securePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
 
-    Connect-ExchangeOnline -AppId $ClientId -Organization $TenantId -Certificate $certificate -ErrorAction Stop
+    # WICHTIG: Hier wird nun $M365Domain statt der Tenant-ID-GUID für -Organization übergeben
+    Connect-ExchangeOnline -AppId $ClientId -Organization $M365Domain -Certificate $certificate -ErrorAction Stop
     Write-Host "Erfolgreich mit Exchange Online verbunden." -ForegroundColor Green
 }
 catch {
