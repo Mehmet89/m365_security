@@ -10,10 +10,10 @@ param(
     [string]$TenantId = $env:TENANT_ID,
 
     [Parameter(Mandatory=$false)]
-    [string]$ClientId = $env:M365_CLIENT_ID,
+    [string]$ClientId = $env:CLIENT_ID,
 
     [Parameter(Mandatory=$false)]
-    [string]$ClientSecret = $env:M365_CLIENT_SECRET,
+    [string]$ClientSecret = $env:CLIENT_SECRET,
 
     [Parameter(Mandatory=$false)]
     [string]$CertBase64 = $env:AZURE_CERT_BASE64,
@@ -77,7 +77,6 @@ try {
     $securePassword = ConvertTo-SecureString $CertPassword -AsPlainText -Force
     $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tempCertPath, $securePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
 
-    # WICHTIG: Hier wird nun $M365Domain statt der Tenant-ID-GUID für -Organization übergeben
     Connect-ExchangeOnline -AppId $ClientId -Organization $M365Domain -Certificate $certificate -ErrorAction Stop
     Write-Host "Erfolgreich mit Exchange Online verbunden." -ForegroundColor Green
 }
