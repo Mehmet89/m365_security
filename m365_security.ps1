@@ -1,13 +1,10 @@
 <#
 .SYNOPSIS
     M365 Security Check - Skript zur Überprüfung von Postfächern auf Sicherheitsrisiken
-    (z. B. versteckte Posteingangsregeln, Weiterleitungen etc.)
 .DESCRIPTION
-    Verbindet sich per App-Only (Client Credentials) mit Microsoft Graph und Exchange Online,
-    führt die Sicherheitsprüfungen durch und generiert einen Bericht.
+    Verbindet sich per App-Only mit Microsoft Graph und Exchange Online.
 #>
 
-# Parameter oder Umgebungsvariablen (werden idealerweise aus GitHub Secrets übergeben)
 param(
     [Parameter(Mandatory=$false)]
     [string]$TenantId = $env:TENANT_ID,
@@ -19,20 +16,41 @@ param(
     [string]$ClientSecret = $env:CLIENT_SECRET
 )
 
-# Überprüfung, ob die Anmeldedaten vorhanden sind
+# Überprüfung der Anmeldedaten
 if (-not $TenantId -or -not $ClientId -or -not $ClientSecret) {
     Write-Error "Fehler: TenantId, ClientId oder ClientSecret wurden nicht übergeben oder sind leer."
     exit 1
 }
 
 Write-Host "Starte M365 Sicherheitscheck..." -ForegroundColor Cyan
-Write-Host "Verbinde mit Microsoft Graph und Exchange Online..." -ForegroundColor Cyan
 
-# 1. Client Secret in einen SecureString konvertieren und das PSCredential-Objekt erstellen
+# ---------------------------------------------------------------------------
+# 1. Module prüfen und installieren / laden
+# ---------------------------------------------------------------------------
+Write-Host "Überprüfe benötigte PowerShell-Module..." -ForegroundColor Cyan
+
+# Microsoft.Graph prüfen
+if (-not (Get-Module -ListAvailable -Name Microsoft.Graph)) {
+    Write-Host "Installiere Microsoft.Graph Modul..." -ForegroundColor Yellow
+    Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
+}
+
+# ExchangeOnlineManagement prüfen
+if (-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
+    Write-Host "Installiere ExchangeOnlineManagement Modul..." -ForegroundColor Yellow
+    Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force -AllowClobber
+}
+
+Import-Module Microsoft.Graph -ErrorAction Stop
+Import-Module ExchangeOnlineManagement -ErrorAction Stop
+
+# ---------------------------------------------------------------------------
+# 2. Verbindung zu Microsoft Graph herstellen
+# ---------------------------------------------------------------------------
+Write-Host "Verbinde mit Microsoft Graph..." -ForegroundColor Cyan
 $SecureSecret = ConvertTo-SecureString $ClientSecret -AsPlainText -Force
 $ClientCredential = New-Object System.Management.Automation.PSCredential ($ClientId, $SecureSecret)
 
-# 2. Verbindung zu Microsoft Graph herstellen (App-Only / ClientSecretCredential)
 try {
     Connect-MgGraph -ClientSecretCredential $ClientCredential -TenantId $TenantId -ErrorAction Stop
     Write-Host "Erfolgreich mit Microsoft Graph verbunden." -ForegroundColor Green
@@ -42,9 +60,13 @@ catch {
     exit 1
 }
 
-# 3. Verbindung zu Exchange Online herstellen (App-Only)
+# ---------------------------------------------------------------------------
+# 3. Verbindung zu Exchange Online herstellen (App-Only für Exchange)
+# ---------------------------------------------------------------------------
+Write-Host "Verbinde mit Exchange Online..." -ForegroundColor Cyan
 try {
-    Connect-ExchangeOnline -AppId $ClientId -Organization $TenantId -Credential $ClientCredential -ErrorAction Stop
+    # Für Exchange Online App-Only wird das Secret direkt als SecureString übergeben
+    Connect-ExchangeOnline -AppId $ClientId -Organization $TenantId -ClientSecret $SecureSecret -ErrorAction Stop
     Write-Host "Erfolgreich mit Exchange Online verbunden." -ForegroundColor Green
 }
 catch {
@@ -60,13 +82,11 @@ Write-Host "Führe Postfach-Analysen durch..." -ForegroundColor Yellow
 
 $Report = [System.Collections.Generic.List[PSCustomObject]]::New()
 
-# Beispiel: Alle Postfächer abrufen und prüfen (anpassbar an deine bisherige Logik)
 $Mailboxes = Get-Mailbox -RecipientTypeDetails UserMailbox -ResultSize Unlimited
 
 foreach ($Mailbox in $Mailboxes) {
     Write-Host "Prüfe Postfach: $($Mailbox.UserPrincipalName)" -ForegroundColor DarkCyan
 
-    # Posteingangsregeln prüfen
     $Rules = Get-InboxRule -Mailbox $Mailbox.UserPrincipalName -ErrorAction SilentlyContinue
     foreach ($Rule in $Rules) {
         if ($Rule.ForwardTo -or $Rule.ForwardAsAttachmentTo -or $Rule.RedirectTo) {
